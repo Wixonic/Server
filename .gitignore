@@ -1,0 +1,8 @@
+.DS_Store
+.deno/
+
+deno.lock
+
+storage/
+secrets.js*
+secrets.ts
