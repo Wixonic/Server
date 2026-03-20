@@ -11,6 +11,9 @@
 		"start": "deno run --allow-all src/main.ts",
 		"dev:start": "CLIENT=dev deno run --allow-all src/main.ts"
 	},
+	"imports": {
+		"@std/encoding": "jsr:@std/encoding@1.0.10"
+	},
 	"compilerOptions": {
 		"strict": true
 	}
