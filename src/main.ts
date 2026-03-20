@@ -1,6 +1,6 @@
 import { config } from "./config.ts";
 import { secrets } from "./secrets.ts";
-import { startProxyFacade } from "./modules/proxy/proxy.ts";
+import { startProxyFacade } from "./modules/proxy/module.ts";
 
 export interface Handler {
 	domain: string;
