@@ -58,10 +58,10 @@ const main = async () => {
 	};
 
 	Deno.serve({
-		hostname: "localhost",
+		hostname: "127.0.0.1",
 		port: config.port.internal
 	}, handler);
-	console.info(`Deno server listening on localhost:${config.port.internal}`);
+	console.info(`Deno server listening on 127.0.0.1:${config.port.internal}`);
 
 	startProxyFacade(cert, key, config.port.internal);
 };

@@ -23,7 +23,8 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		});
 
 		req.pipe(proxyRequest);
-		proxyRequest.on("error", () => {
+		proxyRequest.on("error", (error) => {
+			console.error(`Failed to forward request to internal server 127.0.0.1:${internalPort}`, error);
 			if (!res.headersSent) res.writeHead(502);
 			res.end("Bad Gateway");
 		});
@@ -53,7 +54,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		clientSocket.on("error", () => serverSocket.end());
 	});
 
-	server.listen(config.port.facade, () => console.log(`Proxy listening on port ${config.port.facade}`));
+	server.listen(config.port.facade, () => console.log(`Proxy listening on 127.0.0.1:${config.port.facade}`));
 };
 
 import type { Handler } from "../../main.ts";
