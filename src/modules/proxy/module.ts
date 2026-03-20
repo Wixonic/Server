@@ -11,7 +11,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		key,
 		cert
 	}, (req, res) => {
-		const proxyReq = http.request({
+		const proxyRequest = http.request({
 			hostname: "127.0.0.1",
 			port: internalPort,
 			path: req.url,
@@ -22,8 +22,8 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 			proxyRes.pipe(res);
 		});
 
-		req.pipe(proxyReq);
-		proxyReq.on("error", () => {
+		req.pipe(proxyRequest);
+		proxyRequest.on("error", () => {
 			if (!res.headersSent) res.writeHead(502);
 			res.end("Bad Gateway");
 		});
