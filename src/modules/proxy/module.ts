@@ -7,10 +7,48 @@ import { config } from "../../config.ts";
 import { user, password } from "./secrets.ts";
 
 export const startProxyFacade = (cert: string, key: string, internalPort: number) => {
+	const handleConnect = (req: http.IncomingMessage, clientSocket: net.Socket, head: Uint8Array) => {
+		const expectedAuth = `Basic ${encodeBase64(`${user}:${password}`)}`;
+
+		if (req.headers["proxy-authorization"] !== expectedAuth) {
+			clientSocket.write("HTTP/1.1 407 Proxy Authentication Required\r\n");
+			clientSocket.write('Proxy-Authenticate: Basic realm="Wixonic Proxy"\r\n\r\n');
+			clientSocket.end();
+			return;
+		}
+
+		const [hostname, portStr] = (req.url || "").split(":");
+
+		if (!hostname) {
+			clientSocket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+			clientSocket.end();
+			return;
+		}
+
+		const port = Number.parseInt(portStr, 10) || 443;
+		const serverSocket = net.connect(port, hostname, () => {
+			clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+			if (head.length > 0) serverSocket.write(head);
+			serverSocket.pipe(clientSocket);
+			clientSocket.pipe(serverSocket);
+		});
+
+		serverSocket.on("error", (error) => {
+			console.error(`CONNECT upstream error to ${hostname}:${port}`, error);
+			clientSocket.end();
+		});
+		clientSocket.on("error", () => serverSocket.end());
+	};
+
 	const server = https.createServer({
 		key,
 		cert
 	}, (req, res) => {
+		if (req.method === "CONNECT") {
+			handleConnect(req, req.socket as net.Socket, new Uint8Array(0));
+			return;
+		}
+
 		const proxyRequest = http.request({
 			hostname: "127.0.0.1",
 			port: internalPort,
@@ -31,27 +69,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 	});
 
 	server.on("connect", (req, clientSocket, head) => {
-		const expectedAuth = `Basic ${encodeBase64(`${user}:${password}`)}`;
-
-		if (req.headers["proxy-authorization"] !== expectedAuth) {
-			clientSocket.write("HTTP/1.1 407 Proxy Authentication Required\r\n");
-			clientSocket.write('Proxy-Authenticate: Basic realm="Wixonic Proxy"\r\n\r\n');
-			clientSocket.end();
-			return;
-		}
-
-		const [hostname, portStr] = (req.url || "").split(":");
-		const port = parseInt(portStr) || 443;
-
-		const serverSocket = net.connect(port, hostname, () => {
-			clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-			serverSocket.write(head);
-			serverSocket.pipe(clientSocket);
-			clientSocket.pipe(serverSocket);
-		});
-
-		serverSocket.on("error", () => clientSocket.end());
-		clientSocket.on("error", () => serverSocket.end());
+		handleConnect(req, clientSocket as net.Socket, head);
 	});
 
 	server.listen(config.port.facade, () => console.log(`Proxy listening on 127.0.0.1:${config.port.facade}`));

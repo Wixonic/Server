@@ -12,7 +12,7 @@ const handlers = new Map<string, Handler>();
 const loadHandlers = async () => {
 	try {
 		for await (const entry of Deno.readDir("./src/modules")) {
-			if (entry.isDirectory) {
+			if (entry.isDirectory && entry.name !== "proxy") {
 				try {
 					const importedModule = await import(`./modules/${entry.name}/module.ts`);
 
