@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
+import type { TLSSocket } from "node:tls";
 import { encodeBase64 } from "@std/encoding";
 
 import { config } from "../../config.ts";
@@ -8,19 +9,29 @@ import { user, password } from "./secrets.ts";
 
 export const startProxyFacade = (cert: string, key: string, internalPort: number) => {
 	const expectedAuth = `Basic ${encodeBase64(`${user}:${password}`)}`;
+	const PROXY_DOMAIN = "proxy.wixonic.fr";
 
 	const handleConnect = (req: http.IncomingMessage, clientSocket: net.Socket, head: Uint8Array) => {
-		const host = req.url || "unknown";
+		const servername = (clientSocket as TLSSocket).servername;
+		const target = req.url || "unknown";
+
+		// On refuse le tunneling si on n'est pas sur le bon domaine SNI
+		if (servername !== PROXY_DOMAIN) {
+			console.warn(`[Proxy] Refusing CONNECT tunnel via ${servername} (Unauthorized SNI)`);
+			clientSocket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+			clientSocket.end();
+			return;
+		}
 		
 		if (req.headers["proxy-authorization"] !== expectedAuth) {
-			console.warn(`[Proxy] Unauthorized CONNECT attempt to ${host}`);
+			console.warn(`[Proxy] Unauthorized CONNECT attempt to ${target}`);
 			clientSocket.write("HTTP/1.1 407 Proxy Authentication Required\r\n");
 			clientSocket.write('Proxy-Authenticate: Basic realm="Wixonic Proxy"\r\n\r\n');
 			clientSocket.end();
 			return;
 		}
 
-		const [hostname, portStr] = host.split(":");
+		const [hostname, portStr] = target.split(":");
 		if (!hostname) {
 			clientSocket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
 			clientSocket.end();
@@ -28,7 +39,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		}
 
 		const port = Number.parseInt(portStr, 10) || 443;
-		console.info(`[Proxy] CONNECT tunnel established to ${hostname}:${port}`);
+		console.info(`[Proxy] CONNECT tunnel established to ${hostname}:${port} via ${servername}`);
 		
 		const serverSocket = net.connect(port, hostname, () => {
 			clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
@@ -48,6 +59,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		key,
 		cert
 	}, (req, res) => {
+		const servername = (req.socket as TLSSocket).servername;
 		const host = req.headers["host"] || "";
 		const method = req.method;
 		const url = req.url;
@@ -59,6 +71,15 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 
 		const isInternal = host.includes("wixonic.fr");
 
+		// Si on essaie de naviguer sur l'internet via un mauvais SNI
+		if (!isInternal && servername !== PROXY_DOMAIN) {
+			console.warn(`[Proxy] Refusing external ${method} via ${servername} (Unauthorized SNI)`);
+			res.writeHead(403);
+			res.end("Proxy service is only available on " + PROXY_DOMAIN);
+			return;
+		}
+
+		// On ne vérifie l'auth proxy QUE pour les domaines externes (sur le bon SNI)
 		if (!isInternal && req.headers["proxy-authorization"] !== expectedAuth) {
 			console.warn(`[Proxy] Unauthorized ${method} attempt to ${host}${url}`);
 			res.writeHead(407, { "Proxy-Authenticate": 'Basic realm="Wixonic Proxy"' });
@@ -67,7 +88,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		}
 
 		if (isInternal) {
-			console.info(`[Proxy] Internal route: ${method} ${host}${url}`);
+			console.info(`[Proxy] Internal route: ${method} ${host}${url} (via ${servername})`);
 			const proxyRequest = http.request({
 				hostname: "127.0.0.1",
 				port: internalPort,
@@ -86,7 +107,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 				res.end("Bad Gateway Internal");
 			});
 		} else {
-			console.info(`[Proxy] External route: ${method} ${host}${url}`);
+			console.info(`[Proxy] External route: ${method} ${host}${url} (via ${servername})`);
 			try {
 				const targetUrl = new URL(url!, `http://${host}`);
 				const externalReq = http.request({
