@@ -4,7 +4,7 @@ export const config = {
 		prod: "https://wixonic.fr"
 	},
 	port: {
-		facade: 1000,
-		internal: 1001
+		facade: 1200,
+		internal: 1201
 	}
 };
