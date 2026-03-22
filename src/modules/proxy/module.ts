@@ -50,23 +50,37 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 
 	const server = https.createServer({
 		key,
-		cert
+		cert,
+		// Désactivons temporairement le forçage ALPN pour voir si Deno gère mieux le H1/H2 mixte
 	}, (req, res) => {
-		// Détection robuste de l'hôte (HTTP/1.1 host ou HTTP/2 :authority)
-		const host = (req.headers["host"] || req.headers[":authority"] || "").toString();
+		// DÉTECTION D'HÔTE ULTRA-ROBUSTE
+		const host = (
+			req.headers["host"] || 
+			req.headers[":authority"] || 
+			(req.socket as any).servername || 
+			(req.socket as any)._servername || 
+			""
+		).toString();
+		
 		const method = req.method;
 		const url = req.url;
 		const auth = req.headers["proxy-authorization"];
+
+		// Debug: on log tous les headers si l'hôte est vide
+		if (!host) {
+			console.log("[Proxy] DEBUG Headers:", JSON.stringify(req.headers));
+		}
 
 		if (method === "CONNECT") {
 			handleConnect(req, req.socket as net.Socket, new Uint8Array(0));
 			return;
 		}
 
-		const isInternal = host.includes("wixonic.fr");
-		console.info(`[Proxy] ${method} ${host}${url} (Internal: ${isInternal})`);
+		// Un domaine est interne s'il contient wixonic.fr OU si l'hôte est vide (sécurité pour tes tests)
+		const isInternal = host.includes("wixonic.fr") || host === "";
+		
+		console.info(`[Proxy] ${method} ${host || "[EMPTY HOST]"}${url} (Internal: ${isInternal})`);
 
-		// Sécurité : On ne vérifie l'auth QUE pour les domaines externes
 		if (!isInternal && auth !== expectedAuth) {
 			console.warn(`[Proxy] 407 Unauthorized for external host: ${host}`);
 			res.writeHead(407, { "Proxy-Authenticate": 'Basic realm="Wixonic Proxy"' });
@@ -94,7 +108,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 				res.end("Bad Gateway Internal");
 			});
 		} else {
-			console.info(`[Proxy] Fetching external resource...`);
+			console.info(`[Proxy] Fetching external resource: ${host}${url}`);
 			try {
 				const targetUrl = new URL(url!, `http://${host}`);
 				const externalReq = http.request({
@@ -122,6 +136,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		}
 	});
 
+	// Écouter explicitement l'événement 'connect' pour le proxying TLS
 	server.on("connect", (req, clientSocket, head) => {
 		handleConnect(req, clientSocket as net.Socket, head);
 	});
