@@ -15,9 +15,12 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		const servername = (clientSocket as TLSSocket).servername;
 		const target = req.url || "unknown";
 
-		// On refuse le tunneling si on n'est pas sur le bon domaine SNI
-		if (servername !== PROXY_DOMAIN) {
-			console.warn(`[Proxy] Refusing CONNECT tunnel via ${servername} (Unauthorized SNI)`);
+		// On refuse le tunneling vers l'internet si on n'est pas sur le bon domaine SNI
+		// SAUF si on essaie de joindre un domaine interne (ex: tunneling vers server.wixonic.fr)
+		const isInternalTarget = target.includes("wixonic.fr");
+		
+		if (!isInternalTarget && servername !== PROXY_DOMAIN) {
+			console.warn(`[Proxy] Refusing CONNECT tunnel via ${servername} (Unauthorized SNI for external target)`);
 			clientSocket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
 			clientSocket.end();
 			return;
@@ -71,23 +74,8 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 
 		const isInternal = host.includes("wixonic.fr");
 
-		// Si on essaie de naviguer sur l'internet via un mauvais SNI
-		if (!isInternal && servername !== PROXY_DOMAIN) {
-			console.warn(`[Proxy] Refusing external ${method} via ${servername} (Unauthorized SNI)`);
-			res.writeHead(403);
-			res.end("Proxy service is only available on " + PROXY_DOMAIN);
-			return;
-		}
-
-		// On ne vérifie l'auth proxy QUE pour les domaines externes (sur le bon SNI)
-		if (!isInternal && req.headers["proxy-authorization"] !== expectedAuth) {
-			console.warn(`[Proxy] Unauthorized ${method} attempt to ${host}${url}`);
-			res.writeHead(407, { "Proxy-Authenticate": 'Basic realm="Wixonic Proxy"' });
-			res.end();
-			return;
-		}
-
 		if (isInternal) {
+			// ACCÈS DIRECT À TES SITES : Toujours autorisé quel que soit le SNI
 			console.info(`[Proxy] Internal route: ${method} ${host}${url} (via ${servername})`);
 			const proxyRequest = http.request({
 				hostname: "127.0.0.1",
@@ -107,6 +95,21 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 				res.end("Bad Gateway Internal");
 			});
 		} else {
+			// ACCÈS À L'INTERNET : Uniquement via proxy.wixonic.fr + Authentification
+			if (servername !== PROXY_DOMAIN) {
+				console.warn(`[Proxy] Refusing external ${method} via ${servername} (Unauthorized SNI)`);
+				res.writeHead(403);
+				res.end("Proxy service is only available on " + PROXY_DOMAIN);
+				return;
+			}
+
+			if (req.headers["proxy-authorization"] !== expectedAuth) {
+				console.warn(`[Proxy] Unauthorized ${method} attempt to ${host}${url}`);
+				res.writeHead(407, { "Proxy-Authenticate": 'Basic realm="Wixonic Proxy"' });
+				res.end();
+				return;
+			}
+
 			console.info(`[Proxy] External route: ${method} ${host}${url} (via ${servername})`);
 			try {
 				const targetUrl = new URL(url!, `http://${host}`);
