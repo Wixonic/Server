@@ -41,46 +41,52 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		clientSocket.on("error", () => serverSocket.end());
 	};
 
-	const server = https.createServer({
-		key,
-		cert,
-		// Pour macOS, il est parfois nécessaire d'être explicite sur le protocole supporté
-		ALPNProtocols: ["http/1.1"]
-	}, (req, res) => {
-		// Log immédiat pour debug
-		const rawHost = (req.headers["host"] || req.headers[":authority"] || "").toString();
-		const cleanHost = rawHost.split(":")[0]; // On enlève le port pour Deno
+	const server = https.createServer({ key, cert }, (req, res) => {
+		// DÉTECTION D'HÔTE ULTRA-ROBUSTE
+		let host = "";
+		
+		// 1. Essayer l'URL complète (cas typique du proxy HTTP)
+		if (req.url?.startsWith("http")) {
+			try { host = new URL(req.url).hostname; } catch { /* ignore */ }
+		}
+		
+		// 2. Essayer les headers standards (H1 et H2)
+		if (!host) {
+			host = (req.headers["host"] || req.headers[":authority"] || "").toString().split(":")[0];
+		}
+		
+		// 3. Essayer le SNI du certificat
+		if (!host) {
+			host = (req.socket as any).servername || (req.socket as any)._servername || "";
+		}
+
 		const method = req.method;
 		const url = req.url;
 		const auth = req.headers["proxy-authorization"];
 
-		if (method === "CONNECT") {
-			handleConnect(req, req.socket as net.Socket, new Uint8Array(0));
-			return;
-		}
+		console.info(`[Proxy] Incoming: ${method} ${host || "[EMPTY]"}${url}`);
 
-		const isInternal = cleanHost.includes("wixonic.fr") || cleanHost === "";
-		console.info(`[Proxy] Incoming: ${method} ${cleanHost}${url} (Internal: ${isInternal})`);
+		const isInternal = host.includes("wixonic.fr");
 
-		// Nettoyage complet des headers pour éviter les conflits H1/H2
+		// Nettoyage des headers
 		const headers = { ...req.headers };
 		delete headers["proxy-authorization"];
 		Object.keys(headers).forEach(k => { if (k.startsWith(":")) delete headers[k]; });
 		
-		// Forcer l'hôte propre (sans le port) pour que Deno le reconnaisse
-		if (cleanHost) headers["host"] = cleanHost;
+		// CRUCIAL : On force l'hôte pour Deno
+		if (host) headers["host"] = host;
 
 		if (!isInternal && auth !== expectedAuth) {
-			console.warn(`[Proxy] 407 Unauthorized for ${cleanHost}`);
+			console.warn(`[Proxy] 407 Unauthorized for ${host || "unknown host"}`);
 			res.writeHead(407, { "Proxy-Authenticate": 'Basic realm="Wixonic Proxy"' });
 			res.end();
 			return;
 		}
 
 		const targetPort = isInternal ? internalPort : 80;
-		const targetHost = isInternal ? "127.0.0.1" : cleanHost;
+		const targetHost = isInternal ? "127.0.0.1" : host;
 
-		console.info(`[Proxy] Forwarding ${method} to ${targetHost}:${targetPort} with host "${cleanHost}"`);
+		console.info(`[Proxy] Forwarding to ${targetHost}:${targetPort} (Host header: "${headers["host"]}")`);
 
 		const proxyReq = http.request({
 			hostname: targetHost,
@@ -99,6 +105,11 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 			if (!res.headersSent) res.writeHead(502);
 			res.end("Bad Gateway");
 		});
+	});
+
+	// Log de connexion brute pour voir si macOS tente au moins de se connecter
+	server.on("connection", (socket) => {
+		console.log(`[Proxy] New TCP connection from ${socket.remoteAddress}`);
 	});
 
 	server.on("connect", (req, clientSocket, head) => {
