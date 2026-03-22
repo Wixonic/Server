@@ -13,7 +13,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		const target = req.url || "unknown";
 		const auth = req.headers["proxy-authorization"];
 
-		console.info(`[Proxy] CONNECT request for: ${target}`);
+		console.info(`[Proxy] CONNECT request: ${target}`);
 
 		if (auth !== expectedAuth) {
 			console.warn(`[Proxy] Unauthorized CONNECT to ${target}`);
@@ -24,119 +24,73 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		}
 
 		const [hostname, portStr] = target.split(":");
-		if (!hostname) {
-			clientSocket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
-			clientSocket.end();
-			return;
-		}
-
 		const port = Number.parseInt(portStr, 10) || 443;
-		console.info(`[Proxy] Tunneling to ${hostname}:${port}...`);
-		
+
 		const serverSocket = net.connect(port, hostname, () => {
-			console.info(`[Proxy] Connected to ${hostname}:${port}`);
+			console.info(`[Proxy] Tunnel established to ${hostname}:${port}`);
 			clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
 			if (head && head.length > 0) serverSocket.write(head);
 			serverSocket.pipe(clientSocket);
 			clientSocket.pipe(serverSocket);
 		});
 
-		serverSocket.on("error", (error) => {
-			console.error(`[Proxy] Upstream error (${hostname}): ${error.message}`);
+		serverSocket.on("error", (err) => {
+			console.error(`[Proxy] Tunnel error to ${hostname}:`, err.message);
 			clientSocket.end();
 		});
 		clientSocket.on("error", () => serverSocket.end());
 	};
 
-	const server = https.createServer({
-		key,
-		cert,
-		// Désactivons temporairement le forçage ALPN pour voir si Deno gère mieux le H1/H2 mixte
-	}, (req, res) => {
-		// DÉTECTION D'HÔTE ULTRA-ROBUSTE
-		const host = (
-			req.headers["host"] || 
-			req.headers[":authority"] || 
-			(req.socket as any).servername || 
-			(req.socket as any)._servername || 
-			""
-		).toString();
-		
-		const method = req.method;
-		const url = req.url;
-		const auth = req.headers["proxy-authorization"];
+	const server = https.createServer({ key, cert }, (req, res) => {
+		// Log immédiat pour voir si la requête arrive
+		const host = (req.headers["host"] || req.headers[":authority"] || "").toString();
+		console.info(`[Proxy] Incoming: ${req.method} ${host}${req.url}`);
 
-		// Debug: on log tous les headers si l'hôte est vide
-		if (!host) {
-			console.log("[Proxy] DEBUG Headers:", JSON.stringify(req.headers));
-		}
-
-		if (method === "CONNECT") {
+		if (req.method === "CONNECT") {
 			handleConnect(req, req.socket as net.Socket, new Uint8Array(0));
 			return;
 		}
 
-		// Un domaine est interne s'il contient wixonic.fr OU si l'hôte est vide (sécurité pour tes tests)
 		const isInternal = host.includes("wixonic.fr") || host === "";
-		
-		console.info(`[Proxy] ${method} ${host || "[EMPTY HOST]"}${url} (Internal: ${isInternal})`);
+		const auth = req.headers["proxy-authorization"];
+
+		// On nettoie les headers pour éviter les conflits H1/H2
+		const headers = { ...req.headers };
+		delete headers["proxy-authorization"];
+		Object.keys(headers).forEach(k => { if (k.startsWith(":")) delete headers[k]; });
+		if (host) headers["host"] = host;
 
 		if (!isInternal && auth !== expectedAuth) {
-			console.warn(`[Proxy] 407 Unauthorized for external host: ${host}`);
+			console.warn(`[Proxy] 407 Unauthorized for ${host}`);
 			res.writeHead(407, { "Proxy-Authenticate": 'Basic realm="Wixonic Proxy"' });
 			res.end();
 			return;
 		}
 
-		if (isInternal) {
-			console.info(`[Proxy] Forwarding to internal Deno server...`);
-			const proxyRequest = http.request({
-				hostname: "127.0.0.1",
-				port: internalPort,
-				path: url,
-				method: method,
-				headers: req.headers
-			}, (proxyRes) => {
-				res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
-				proxyRes.pipe(res);
-			});
+		const targetPort = isInternal ? internalPort : 80;
+		const targetHost = isInternal ? "127.0.0.1" : host.split(":")[0];
 
-			req.pipe(proxyRequest);
-			proxyRequest.on("error", (error) => {
-				console.error(`[Proxy] Internal forward error: ${error.message}`);
-				if (!res.headersSent) res.writeHead(502);
-				res.end("Bad Gateway Internal");
-			});
-		} else {
-			console.info(`[Proxy] Fetching external resource: ${host}${url}`);
-			try {
-				const targetUrl = new URL(url!, `http://${host}`);
-				const externalReq = http.request({
-					hostname: targetUrl.hostname,
-					port: targetUrl.port || 80,
-					path: targetUrl.pathname + targetUrl.search,
-					method: method,
-					headers: req.headers
-				}, (externalRes) => {
-					res.writeHead(externalRes.statusCode || 200, externalRes.headers);
-					externalRes.pipe(res);
-				});
+		console.info(`[Proxy] Forwarding ${req.method} to ${targetHost}:${targetPort}`);
 
-				req.pipe(externalReq);
-				externalReq.on("error", (error) => {
-					console.error(`[Proxy] External forward error: ${error.message}`);
-					if (!res.headersSent) res.writeHead(502);
-					res.end("Bad Gateway External");
-				});
-			} catch (error) {
-				console.error(`[Proxy] URL error: ${error.message}`);
-				res.writeHead(400);
-				res.end("Invalid URL");
-			}
-		}
+		const proxyReq = http.request({
+			hostname: targetHost,
+			port: targetPort,
+			path: req.url,
+			method: req.method,
+			headers: headers
+		}, (proxyRes) => {
+			res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+			proxyRes.pipe(res);
+		});
+
+		req.pipe(proxyReq);
+		proxyReq.on("error", (err) => {
+			console.error(`[Proxy] Forward error:`, err.message);
+			if (!res.headersSent) res.writeHead(502);
+			res.end("Bad Gateway");
+		});
 	});
 
-	// Écouter explicitement l'événement 'connect' pour le proxying TLS
 	server.on("connect", (req, clientSocket, head) => {
 		handleConnect(req, clientSocket as net.Socket, head);
 	});
