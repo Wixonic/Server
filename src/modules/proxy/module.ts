@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
+import type { TLSSocket } from "node:tls";
 import { encodeBase64 } from "@std/encoding";
 
 import { config } from "../../config.ts";
@@ -9,13 +10,25 @@ import { user, password } from "./secrets.ts";
 export const startProxyFacade = (cert: string, key: string, internalPort: number) => {
 	const expectedAuth = `Basic ${encodeBase64(`${user}:${password}`)}`;
 
+	const getHeaderValue = (header: string | string[] | undefined): string => {
+		if (!header) return "";
+		if (Array.isArray(header)) return header[0] || "";
+		return header;
+	};
+
+	const isAuthorized = (authHeader: string | string[] | undefined): boolean => {
+		const auth = getHeaderValue(authHeader).trim();
+		if (!auth || !auth.toLowerCase().startsWith("basic ")) return false;
+		return auth === expectedAuth;
+	};
+
 	const handleConnect = (req: http.IncomingMessage, clientSocket: net.Socket, head: Uint8Array) => {
 		const target = req.url || "";
 		const auth = req.headers["proxy-authorization"];
 
 		console.info(`[Proxy] CONNECT request: ${target}`);
 
-		if (auth !== expectedAuth) {
+		if (!isAuthorized(auth)) {
 			console.warn(`[Proxy] Unauthorized CONNECT to ${target}`);
 			clientSocket.write("HTTP/1.1 407 Proxy Authentication Required\r\n");
 			clientSocket.write('Proxy-Authenticate: Basic realm="Wixonic Proxy"\r\n\r\n');
@@ -59,6 +72,13 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 	const server = https.createServer({ key, cert }, (req, res) => {
 		// DÉTECTION D'HÔTE ULTRA-ROBUSTE
 		let host = "";
+		const method = req.method || "GET";
+		const url = req.url || "/";
+		const auth = req.headers["proxy-authorization"];
+		const hasProxyAuth = !!getHeaderValue(auth);
+		const hasProxyConnection = !!getHeaderValue(req.headers["proxy-connection"]);
+		const isAbsoluteUrl = url.startsWith("http://") || url.startsWith("https://");
+		const isProxyTraffic = method === "CONNECT" || isAbsoluteUrl || hasProxyAuth || hasProxyConnection;
 
 		// 1. Essayer l'URL complète (cas typique du proxy HTTP)
 		if (req.url?.startsWith("http")) {
@@ -72,12 +92,13 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 
 		// 3. Essayer le SNI du certificat
 		if (!host) {
-			host = (req.socket as any).servername || (req.socket as any)._servername || "";
+			const tlsSocket = req.socket as TLSSocket & { _servername?: string };
+			host = tlsSocket.servername || tlsSocket._servername || "";
 		}
 
-		const method = req.method;
-		const url = req.url;
-		const auth = req.headers["proxy-authorization"];
+		if (!host && !isProxyTraffic) {
+			host = "server.wixonic.fr";
+		}
 
 		console.info(`[Proxy] Incoming: ${method} ${host || "[EMPTY]"}${url}`);
 
@@ -91,7 +112,7 @@ export const startProxyFacade = (cert: string, key: string, internalPort: number
 		// CRUCIAL : On force l'hôte pour Deno
 		if (host) headers["host"] = host;
 
-		if (!isInternal && auth !== expectedAuth) {
+		if (!isInternal && isProxyTraffic && !isAuthorized(auth)) {
 			console.warn(`[Proxy] 407 Unauthorized for ${host || "unknown host"}`);
 			res.writeHead(407, { "Proxy-Authenticate": 'Basic realm="Wixonic Proxy"' });
 			res.end();
