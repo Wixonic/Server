@@ -50,10 +50,12 @@ const main = async () => {
 	}
 
 	const handler = async (req: Request): Promise<Response> => {
-		const hostHeader = req.headers.get("host");
+		const hostHeader = req.headers.get("host") || "";
+		console.info(`[Deno] Incoming request for host: "${hostHeader}"`);
 
 		if (hostHeader && handlers.has(hostHeader)) return await handlers.get(hostHeader)!.handle(req);
 
+		console.warn(`[Deno] No handler found for "${hostHeader}", redirecting to fallback.`);
 		const fallbackUrl = Deno.env.get("CLIENT") === "dev" ? config.fallback.dev : config.fallback.prod;
 		return Response.redirect(fallbackUrl, 302);
 	};
