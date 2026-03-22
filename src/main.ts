@@ -1,6 +1,6 @@
 import { config } from "./config.ts";
 import { secrets } from "./secrets.ts";
-import { startProxyFacade } from "./modules/proxy/module.ts";
+import { startProxyFacade, proxy as proxyHandler } from "./modules/proxy/module.ts";
 
 export interface Handler {
 	domain: string;
@@ -35,6 +35,7 @@ const loadHandlers = async () => {
 };
 
 const main = async () => {
+	handlers.set(proxyHandler.domain, proxyHandler);
 	await loadHandlers();
 
 	let cert: string;
