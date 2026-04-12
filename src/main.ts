@@ -19,6 +19,11 @@ const loadHandlers = async () => {
 						const handler = importedModule.handler as Handler;
 
 						if (handler.domain && typeof handler.handle === "function") {
+							if (handlers.has(handler.domain)) {
+								console.warn(`Duplicate handler for domain "${handler.domain}" found in module "${entry.name}". Skipping.`);
+								continue;
+							}
+
 							handlers.set(handler.domain, handler as Handler);
 							console.log(`Loaded handler for domain: ${handler.domain}`);
 						}
@@ -36,25 +41,9 @@ const loadHandlers = async () => {
 const main = async () => {
 	await loadHandlers();
 
-	let cert: string;
-	let key: string;
-
-	try {
-		cert = await Deno.readTextFile(secrets.ssl.certPath);
-		key = await Deno.readTextFile(secrets.ssl.keyPath);
-	} catch (error) {
-		console.error("Failed to read SSL certificates.", error);
-		Deno.exit(1);
-	}
-
-	Deno.serve({
-		cert,
-		key,
-		port: config.port
-	}, async (req: Request): Promise<Response> => {
-		const hostHeader = req.headers.get("host") || "";
-		const [hostDomain] = hostHeader.split(":");
-		console.info(`[Deno] Incoming request for host: "${hostDomain}"`);
+	const mainHandler = async (req: Request): Promise<Response> => {
+		const hostDomain = req.headers.get("host") || "";
+		console.info(`Incoming request for host: "${hostDomain}"`);
 
 		if (hostDomain && handlers.has(hostDomain)) {
 			try {
@@ -65,10 +54,31 @@ const main = async () => {
 			}
 		}
 
-		console.warn(`[Deno] No handler found for "${hostDomain}", redirecting to fallback.`);
-		const fallbackUrl = Deno.env.get("CLIENT") === "dev" ? config.fallback.dev : config.fallback.prod;
-		return Response.redirect(fallbackUrl, 302);
-	});
+		console.warn(`No handler found for "${hostDomain}", redirecting to fallback.`);
+		return Response.redirect(config.fallback, 302);
+	}
+
+	if (config.secure) {
+		let cert: string;
+		let key: string;
+		try {
+			cert = await Deno.readTextFile(secrets.ssl.certPath);
+			key = await Deno.readTextFile(secrets.ssl.keyPath);
+		} catch (error) {
+			console.error("Failed to read SSL certificates.", error);
+			Deno.exit(1);
+		}
+
+		Deno.serve({
+			cert,
+			key,
+			port: config.port
+		}, mainHandler);
+	} else {
+		Deno.serve({
+			port: config.port
+		}, mainHandler);
+	}
 };
 
 main();
