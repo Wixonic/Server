@@ -1,6 +1,6 @@
 import type { Handler } from "../../main.ts";
 
-export const test: Handler = {
+export const handler: Handler = {
 	domain: "server.wixonic.fr",
 	handle: () => new Response("Hi!")
 };
