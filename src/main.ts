@@ -1,35 +1,65 @@
+import path from "node:path";
+
 import { config } from "./config.ts";
 import { secrets } from "./secrets.ts";
 
-export interface Handler {
-	domain: string;
-	handle: (req: Request) => Response | Promise<Response>;
-}
+export type Handler =
+	| {
+		domain: string;
+		origin?: never;
+		handle: (req: Request) => Response | Promise<Response>;
+	}
+	| {
+		origin: string;
+		domain?: never;
+		handle: (req: Request) => Response | Promise<Response>;
+	};
 
 const handlers = new Map<string, Handler>();
 
-const loadHandlers = async () => {
+const loadHandlers = async (directory = "") => {
 	try {
-		for await (const entry of Deno.readDir("./src/modules")) {
-			if (entry.isDirectory) {
+		for await (const entry of Deno.readDir(path.join("./src/modules", directory))) {
+			const entryPath = path.join(directory, entry.name);
+			const fullEntryPath = path.join("./src/modules", entryPath);
+
+			let isDirectory = entry.isDirectory;
+			let isFile = entry.isFile;
+
+			if (entry.isSymlink) {
 				try {
-					const importedModule = await import(`./modules/${entry.name}/module.ts`);
+					const stat = await Deno.stat(fullEntryPath);
+					isDirectory = stat.isDirectory;
+					isFile = stat.isFile;
+				} catch (error) {
+					console.warn(`Could not stat symlink target for ${fullEntryPath}:`, error);
+					continue;
+				}
+			}
+
+			if (isDirectory) await loadHandlers(entryPath);
+			else if (isFile && entry.name.endsWith(".ts")) {
+				const filePath = directory ? `${directory}/${entry.name}` : entry.name;
+
+				try {
+					const importedModule = await import(`./modules/${filePath}`);
 
 					if (importedModule.handler) {
 						const handler = importedModule.handler as Handler;
+						const handlerKey = "domain" in handler ? handler.domain : handler.origin;
 
-						if (handler.domain && typeof handler.handle === "function") {
-							if (handlers.has(handler.domain)) {
-								console.warn(`Duplicate handler for domain "${handler.domain}" found in module "${entry.name}". Skipping.`);
+						if (handlerKey && typeof handler.handle === "function") {
+							if (handlers.has(handlerKey)) {
+								console.warn(`Duplicate handler for key "${handlerKey}" found in module "${filePath}". Skipping.`);
 								continue;
 							}
 
-							handlers.set(handler.domain, handler as Handler);
-							console.log(`Loaded handler for domain: ${handler.domain}`);
+							handlers.set(handlerKey, handler);
+							console.log(`Loaded handler for key: ${handlerKey}`);
 						}
 					}
 				} catch (error) {
-					console.error(`Failed to load module ${entry.name}:`, error);
+					console.error(`Failed to load module ${filePath}:`, error);
 				}
 			}
 		}
@@ -43,13 +73,15 @@ const main = async () => {
 
 	const mainHandler = async (req: Request): Promise<Response> => {
 		const hostDomain = req.headers.get("host") || "";
+		const origin = req.headers.get("origin") || "";
 		console.info(`Incoming request for host: "${hostDomain}"`);
 
-		if (hostDomain && handlers.has(hostDomain)) {
+		const handler = handlers.get(hostDomain) ?? handlers.get(origin);
+		if (handler) {
 			try {
-				return await handlers.get(hostDomain)!.handle(req);
+				return await handler.handle(req);
 			} catch (error) {
-				console.error(`Error while handling request for "${hostDomain}":`, error);
+				console.error(`Error while handling request for "${hostDomain || origin}":`, error);
 				return new Response("Internal Server Error", { status: 500 });
 			}
 		}
