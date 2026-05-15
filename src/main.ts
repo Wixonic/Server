@@ -3,17 +3,15 @@ import path from "node:path";
 import { config } from "./config.ts";
 import { secrets } from "./secrets.ts";
 
-export type Handler =
-	| {
-		domain: string;
-		origin?: never;
-		handle: (req: Request) => Response | Promise<Response>;
-	}
-	| {
-		origin: string;
-		domain?: never;
-		handle: (req: Request) => Response | Promise<Response>;
-	};
+export type Handler = {
+	domain: string;
+	origin?: never;
+	handle: (req: Request) => Response | Promise<Response>;
+} | {
+	origin: string;
+	domain?: never;
+	handle: (req: Request) => Response | Promise<Response>;
+};
 
 const handlers = new Map<string, Handler>();
 
