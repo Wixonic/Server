@@ -3,13 +3,13 @@
 	"displayName": "Server",
 	"description": "",
 	"author": "Wixonic <contact@wixonic.fr> (https://wixonic.fr)",
-	"version": "1.0.0",
-	"license": "Wix Non-Commercial License",
+	"version": "1.0.0.α.1",
+	"license": "Wixonic Non-Commercial License",
 	"repository": "github:Wixonic/Server",
 	"exports": "./src/main.ts",
 	"tasks": {
-		"start": "deno run --allow-env --allow-read --allow-net src/main.ts",
-		"dev:start": "CLIENT=dev deno run --allow-env --allow-read --allow-net src/main.ts"
+		"start": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net src/main.ts",
+		"dev:start": "CLIENT=dev deno run --allow-env --allow-read --allow-write --allow-run --allow-net src/main.ts"
 	},
 	"imports": {
 		"@std/encoding": "jsr:@std/encoding@1.0.10"
