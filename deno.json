@@ -3,18 +3,24 @@
 	"displayName": "Server",
 	"description": "",
 	"author": "Wixonic <contact@wixonic.fr> (https://wixonic.fr)",
-	"version": "1.0.0.α.1",
+	"version": "1.0.0",
 	"license": "Wixonic Non-Commercial License",
 	"repository": "github:Wixonic/Server",
 	"exports": "./src/main.ts",
 	"tasks": {
-		"start": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net src/main.ts",
-		"dev:start": "CLIENT=dev deno run --allow-env --allow-read --allow-write --allow-run --allow-net src/main.ts"
+		"start": "deno run --allow-all src/main.ts",
+		"dev:start": "CLIENT=dev deno run --allow-all src/main.ts"
 	},
 	"imports": {
-		"@std/encoding": "jsr:@std/encoding@1.0.10"
+		"@napi-rs/canvas": "npm:@napi-rs/canvas@^1.0.3",
+		"@std/encoding": "jsr:@std/encoding@1.0.10",
+		"discord.js": "npm:discord.js@14.26.2",
+		"std/": "https://deno.land/std@0.203.0/"
 	},
 	"compilerOptions": {
 		"strict": true
-	}
+	},
+	"unstable": [
+		"cron"
+	]
 }
