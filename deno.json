@@ -3,7 +3,7 @@
 	"displayName": "Server",
 	"description": "",
 	"author": "Wixonic <contact@wixonic.fr> (https://wixonic.fr)",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"license": "Wixonic Non-Commercial License",
 	"repository": "github:Wixonic/Server",
 	"exports": "./src/main.ts",
