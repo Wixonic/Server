@@ -85,7 +85,8 @@ const withCors = (res: Response, origin: string, reqHeaders?: string | null) => 
 
 const main = async () => {
 	try {
-		await import("../WixiBot/src/main.ts");
+		const wixiBotPath = await Deno.realPath("../WixiBot/src/main.ts").catch(() => path.resolve("../WixiBot/src/main.ts"));
+		await import(new URL(`file://${wixiBotPath}`).href);
 		await loadHandlers("../WixiBot/src/modules");
 	} catch (_error) {
 		console.warn("WixiBot module not found on disk or failed to start. Running Server standalone.");
@@ -150,6 +151,12 @@ const main = async () => {
 		return withCors(Response.redirect(config.fallback, 302), origin, reqHeaders);
 	};
 
+	const ports = new Set<number>([config.port]);
+	for (const handler of handlers) {
+		const match = handler.domain.match(/:(\d+)$/);
+		if (match) ports.add(parseInt(match[1], 10));
+	}
+
 	if (config.secure) {
 		let cert: string;
 		let key: string;
@@ -161,15 +168,9 @@ const main = async () => {
 			Deno.exit(1);
 		}
 
-		Deno.serve({
-			cert,
-			key,
-			port: 1200
-		}, mainHandler);
+		for (const port of ports) Deno.serve({ cert, key, port }, mainHandler);
 	} else {
-		Deno.serve({
-			port: 1200
-		}, mainHandler);
+		for (const port of ports) Deno.serve({ port }, mainHandler);
 	}
 };
 
