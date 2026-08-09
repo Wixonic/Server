@@ -95,11 +95,12 @@ const main = async () => {
 	await loadHandlers("./src/modules");
 
 	const mainHandler = async (req: Request): Promise<Response> => {
-		const hostDomain = req.headers.get("host") || "";
+		const url = new URL(req.url);
+		const hostDomain = req.headers.get("host") || url.host;
 		const origin = req.headers.get("origin") || "";
 		const reqHeaders = req.headers.get("access-control-request-headers");
 		const cleanOrigin = origin.replace(/^https?:\/\//, "");
-		const pathname = new URL(req.url).pathname;
+		const pathname = url.pathname;
 		console.info(`Incoming request for host: "${hostDomain}", origin: "${origin}", path: "${pathname}"`);
 
 		const domainHandlers = handlers.filter((handler) => {
