@@ -84,15 +84,17 @@ const withCors = (res: Response, origin: string, reqHeaders?: string | null) => 
 };
 
 const main = async () => {
+	const directory = import.meta.dirname ?? "";
 	try {
-		const wixiBotPath = await Deno.realPath("../WixiBot/src/main.ts").catch(() => path.resolve("../WixiBot/src/main.ts"));
+		const wixiBotDirectory = path.resolve(directory, "../../WixiBot");
+		const wixiBotPath = await Deno.realPath(path.join(wixiBotDirectory, "src/main.ts")).catch(() => path.join(wixiBotDirectory, "src/main.ts"));
 		await import(new URL(`file://${wixiBotPath}`).href);
-		await loadHandlers("../WixiBot/src/modules");
+		await loadHandlers(path.join(wixiBotDirectory, "src/modules"));
 	} catch (_error) {
 		console.warn("WixiBot module not found on disk or failed to start. Running Server standalone.");
 	}
 
-	await loadHandlers("./src/modules");
+	await loadHandlers(path.join(directory, "modules"));
 
 	const mainHandler = async (req: Request): Promise<Response> => {
 		const url = new URL(req.url);
@@ -112,30 +114,33 @@ const main = async () => {
 				if (origin) return false;
 			} else if (handler.origin !== "*") {
 				if (!origin) return false;
-				const normOrigin = normalizeHost(handler.origin);
-				const normCleanOrigin = normalizeHost(cleanOrigin);
-				const matchesOrigin = handler.origin === origin || handler.origin === cleanOrigin || normOrigin === normCleanOrigin;
+				const normalizedOrigin = normalizeHost(handler.origin);
+				const normalizedCleanOrigin = normalizeHost(cleanOrigin);
+				const matchesOrigin = handler.origin === origin || handler.origin === cleanOrigin || normalizedOrigin === normalizedCleanOrigin;
 				if (!matchesOrigin) return false;
 			}
 
 			return true;
 		});
 
-		let handler = domainHandlers.find((h) => h.path && !h.path.endsWith("*") && normalizePath(h.path) === normalizePath(pathname));
+		let handler = domainHandlers.find((handler) => handler.path && !handler.path.endsWith("*") && normalizePath(handler.path) === normalizePath(pathname));
 
 		if (!handler) {
-			handler = domainHandlers.find((h) => {
-				if (!h.path || !h.path.endsWith("*")) return false;
-				const prefix = h.path.slice(0, -1);
+			handler = domainHandlers.find((handler) => {
+				if (!handler.path || !handler.path.endsWith("*")) return false;
+				const prefix = handler.path.slice(0, -1);
 				return pathname.startsWith(prefix) || pathname === prefix.slice(0, -1);
 			});
 		}
 
-		if (!handler) handler = domainHandlers.find((h) => !h.path);
+		if (!handler) handler = domainHandlers.find((handler) => !handler.path);
 
 		if (req.method === "OPTIONS") {
 			if (handler) return withCors(new Response(null, { status: 204 }), origin, reqHeaders);
-			return withCors(new Response("Method Not Allowed", { status: 405 }), origin, reqHeaders);
+			else {
+				console.warn(`No handler found for request to "${hostDomain || origin}${pathname}". Method Not Allowed.`);
+				return withCors(new Response("Method Not Allowed", { status: 405 }), origin, reqHeaders);
+			}
 		}
 
 		if (handler) {
