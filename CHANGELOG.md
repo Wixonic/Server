@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/Wixonic/Server/compare/v1.0.2...v1.0.3) (2026-08-21)
+
+
+### Bug Fixes
+
+* Dynamic folders, code quality ([38e3192](https://github.com/Wixonic/Server/commit/38e3192b8cf7c4a108b24b0bb10cf5f843593831))
+
 ## [1.0.2](https://github.com/Wixonic/Server/compare/v1.0.1...v1.0.2) (2026-08-09)
 
 
