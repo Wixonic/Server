@@ -4,6 +4,8 @@ import { config } from "./config.ts";
 import { logger as defaultLogger, type Logger } from "./lib/logger.ts";
 import { secrets } from "./secrets.ts";
 
+export type { Logger };
+
 export type Handler = {
 	domain: string;
 	origin?: string;
