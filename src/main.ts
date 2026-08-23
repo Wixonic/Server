@@ -1,15 +1,17 @@
 import path from "node:path";
 
 import { config } from "./config.ts";
+import { logger as defaultLogger, type Logger } from "./lib/logger.ts";
 import { secrets } from "./secrets.ts";
 
 export type Handler = {
 	domain: string;
 	origin?: string;
 	path?: string;
-	handle: (req: Request) => Response | Promise<Response>;
+	handle: (logger: Logger, req: Request) => Response | Promise<Response>;
 };
 
+let logger: Logger = defaultLogger;
 const handlers: Handler[] = [];
 
 const loadHandlers = async (baseDir: string, subDirectory = "") => {
@@ -28,7 +30,7 @@ const loadHandlers = async (baseDir: string, subDirectory = "") => {
 					isDirectory = stat.isDirectory;
 					isFile = stat.isFile;
 				} catch (error) {
-					console.warn(`Could not stat symlink target for ${fullEntryPath}:`, error);
+					logger.warn(`Could not stat symlink target for ${fullEntryPath}:`, error);
 					continue;
 				}
 			}
@@ -48,22 +50,22 @@ const loadHandlers = async (baseDir: string, subDirectory = "") => {
 							});
 
 							if (isDuplicate) {
-								console.warn(`Duplicate handler for domain "${handler.domain}" and path "${handler.path ?? ""}" found in module "${entryPath}". Skipping.`);
+								logger.warn(`Duplicate handler for domain "${handler.domain}" and path "${handler.path ?? ""}" found in module "${entryPath}". Skipping.`);
 								continue;
 							}
 
 							handlers.push(handler);
-							console.log(`Loaded handler for domain: ${handler.domain}${handler.origin ? ` (origin: ${handler.origin})` : ""}${handler.path ? ` (path: ${handler.path})` : ""}`);
+							logger.debug(`Loaded handler for domain: ${handler.domain}${handler.origin ? ` (origin: ${handler.origin})` : ""}${handler.path ? ` (path: ${handler.path})` : ""}`);
 						}
 					}
 				} catch (error) {
-					console.error(`Failed to load module ${entryPath}:`, error);
+					logger.error(`Failed to load module ${entryPath}:`, error);
 				}
 			}
 		}
 	} catch (error) {
 		if (!(error instanceof Deno.errors.NotFound)) {
-			console.error(`Error reading modules directory ${baseDir}:`, error);
+			logger.error(`Error reading modules directory ${baseDir}:`, error);
 		}
 	}
 };
@@ -89,9 +91,13 @@ const main = async () => {
 		const wixiBotDirectory = path.resolve(directory, "../../WixiBot");
 		const wixiBotPath = await Deno.realPath(path.join(wixiBotDirectory, "src/main.ts")).catch(() => path.join(wixiBotDirectory, "src/main.ts"));
 		await import(new URL(`file://${wixiBotPath}`).href);
+
+		const { logger: wixiLogger } = await import(new URL(`file://${path.join(wixiBotDirectory, "src/lib/logger.ts")}`).href);
+		logger = wixiLogger.clone({ prefix: "[Server]", webhookUsername: "Server" });
+
 		await loadHandlers(path.join(wixiBotDirectory, "src/modules"));
 	} catch (_error) {
-		console.warn("WixiBot module not found on disk or failed to start. Running Server standalone.");
+		logger.warn("WixiBot module not found on disk or failed to start. Running Server standalone.");
 	}
 
 	await loadHandlers(path.join(directory, "modules"));
@@ -103,7 +109,7 @@ const main = async () => {
 		const reqHeaders = req.headers.get("access-control-request-headers");
 		const cleanOrigin = origin.replace(/^https?:\/\//, "");
 		const pathname = url.pathname;
-		console.info(`Incoming request for host: "${hostDomain}", origin: "${origin}", path: "${pathname}"`);
+		logger.info(`Incoming request for host: "${hostDomain}", origin: "${origin}", path: "${pathname}"`);
 
 		const domainHandlers = handlers.filter((handler) => {
 			const cleanHost = hostDomain.replace(/^https?:\/\//, "");
@@ -138,22 +144,22 @@ const main = async () => {
 		if (req.method === "OPTIONS") {
 			if (handler) return withCors(new Response(null, { status: 204 }), origin, reqHeaders);
 			else {
-				console.warn(`No handler found for request to "${hostDomain || origin}${pathname}". Method Not Allowed.`);
+				logger.warn(`No handler found for request to "${hostDomain || origin}${pathname}". Method Not Allowed.`);
 				return withCors(new Response("Method Not Allowed", { status: 405 }), origin, reqHeaders);
 			}
 		}
 
 		if (handler) {
 			try {
-				const response = await handler.handle(req);
+				const response = await handler.handle(logger, req);
 				return withCors(response, origin, reqHeaders);
 			} catch (error) {
-				console.error(`Error while handling request for "${hostDomain || origin}${pathname}":`, error);
+				logger.error(`Error while handling request for "${hostDomain || origin}${pathname}":`, error);
 				return withCors(new Response("Internal Server Error", { status: 500 }), origin, reqHeaders);
 			}
 		}
 
-		console.warn(`No handler found for "${hostDomain}${pathname}", redirecting to fallback.`);
+		logger.warn(`No handler found for "${hostDomain}${pathname}", redirecting to fallback.`);
 		return withCors(Response.redirect(config.fallback, 302), origin, reqHeaders);
 	};
 
@@ -170,7 +176,7 @@ const main = async () => {
 			cert = await Deno.readTextFile(secrets.ssl.certPath);
 			key = await Deno.readTextFile(secrets.ssl.keyPath);
 		} catch (error) {
-			console.error("Failed to read SSL certificates.", error);
+			logger.error("Failed to read SSL certificates.", error);
 			Deno.exit(1);
 		}
 
