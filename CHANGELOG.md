@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/Wixonic/Server/compare/v1.0.3...v1.1.0) (2026-08-23)
+
+
+### Features
+
+* Migrate to logger with Webhook support if WixiBot integration ([a565431](https://github.com/Wixonic/Server/commit/a565431a90ceb608ae35d02e8681bdeceea35455))
+
+
+### Bug Fixes
+
+* Export correct type ([4aa89ae](https://github.com/Wixonic/Server/commit/4aa89ae12977e63d8d222a0ec8b5b8da99e769ca))
+
 ## [1.0.3](https://github.com/Wixonic/Server/compare/v1.0.2...v1.0.3) (2026-08-21)
 
 
