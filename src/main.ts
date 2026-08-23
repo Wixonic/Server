@@ -8,18 +8,18 @@ export type Handler = {
 	domain: string;
 	origin?: string;
 	path?: string;
-	handle: (logger: Logger, req: Request) => Response | Promise<Response>;
+	handle: (logger: Logger, request: Request) => Response | Promise<Response>;
 };
 
 let logger: Logger = defaultLogger;
 const handlers: Handler[] = [];
 
-const loadHandlers = async (baseDir: string, subDirectory = "") => {
+const loadHandlers = async (baseDirectory: string, subDirectory = "") => {
 	try {
-		const targetDir = path.join(baseDir, subDirectory);
-		for await (const entry of Deno.readDir(targetDir)) {
+		const targetDirectory = path.join(baseDirectory, subDirectory);
+		for await (const entry of Deno.readDir(targetDirectory)) {
 			const entryPath = subDirectory ? path.join(subDirectory, entry.name) : entry.name;
-			const fullEntryPath = path.join(baseDir, entryPath);
+			const fullEntryPath = path.join(baseDirectory, entryPath);
 
 			let isDirectory = entry.isDirectory;
 			let isFile = entry.isFile;
@@ -35,7 +35,7 @@ const loadHandlers = async (baseDir: string, subDirectory = "") => {
 				}
 			}
 
-			if (isDirectory) await loadHandlers(baseDir, entryPath);
+			if (isDirectory) await loadHandlers(baseDirectory, entryPath);
 			else if (isFile && entry.name.endsWith(".ts")) {
 				try {
 					const resolvedPath = await Deno.realPath(fullEntryPath).catch(() => path.resolve(fullEntryPath));
@@ -65,7 +65,7 @@ const loadHandlers = async (baseDir: string, subDirectory = "") => {
 		}
 	} catch (error) {
 		if (!(error instanceof Deno.errors.NotFound)) {
-			logger.error(`Error reading modules directory ${baseDir}:`, error);
+			logger.error(`Error reading modules directory ${baseDirectory}:`, error);
 		}
 	}
 };
@@ -74,15 +74,15 @@ const normalizeHost = (host: string) => host.replace(/^127\.0\.0\.1/, "localhost
 
 const normalizePath = (pathname: string) => pathname.endsWith("/") && pathname.length > 1 ? pathname.slice(0, -1) : pathname;
 
-const withCors = (res: Response, origin: string, reqHeaders?: string | null) => {
-	const headers = new Headers(res.headers);
+const withCors = (response: Response, origin: string, requestHeaders?: string | null) => {
+	const headers = new Headers(response.headers);
 	if (origin) {
 		headers.set("Access-Control-Allow-Origin", origin);
 		headers.set("Access-Control-Allow-Credentials", "true");
 	} else headers.set("Access-Control-Allow-Origin", "*");
 	headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-	headers.set("Access-Control-Allow-Headers", reqHeaders || "*");
-	return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+	headers.set("Access-Control-Allow-Headers", requestHeaders || "*");
+	return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 };
 
 const main = async () => {
@@ -102,11 +102,11 @@ const main = async () => {
 
 	await loadHandlers(path.join(directory, "modules"));
 
-	const mainHandler = async (req: Request): Promise<Response> => {
-		const url = new URL(req.url);
-		const hostDomain = req.headers.get("host") || url.host;
-		const origin = req.headers.get("origin") || "";
-		const reqHeaders = req.headers.get("access-control-request-headers");
+	const mainHandler = async (request: Request): Promise<Response> => {
+		const url = new URL(request.url);
+		const hostDomain = request.headers.get("host") || url.host;
+		const origin = request.headers.get("origin") || "";
+		const requestHeaders = request.headers.get("access-control-request-headers");
 		const cleanOrigin = origin.replace(/^https?:\/\//, "");
 		const pathname = url.pathname;
 		logger.info(`Incoming request for host: "${hostDomain}", origin: "${origin}", path: "${pathname}"`);
@@ -141,26 +141,26 @@ const main = async () => {
 
 		if (!handler) handler = domainHandlers.find((handler) => !handler.path);
 
-		if (req.method === "OPTIONS") {
-			if (handler) return withCors(new Response(null, { status: 204 }), origin, reqHeaders);
+		if (request.method === "OPTIONS") {
+			if (handler) return withCors(new Response(null, { status: 204 }), origin, requestHeaders);
 			else {
 				logger.warn(`No handler found for request to "${hostDomain || origin}${pathname}". Method Not Allowed.`);
-				return withCors(new Response("Method Not Allowed", { status: 405 }), origin, reqHeaders);
+				return withCors(new Response("Method Not Allowed", { status: 405 }), origin, requestHeaders);
 			}
 		}
 
 		if (handler) {
 			try {
-				const response = await handler.handle(logger, req);
-				return withCors(response, origin, reqHeaders);
+				const response = await handler.handle(logger, request);
+				return withCors(response, origin, requestHeaders);
 			} catch (error) {
 				logger.error(`Error while handling request for "${hostDomain || origin}${pathname}":`, error);
-				return withCors(new Response("Internal Server Error", { status: 500 }), origin, reqHeaders);
+				return withCors(new Response("Internal Server Error", { status: 500 }), origin, requestHeaders);
 			}
 		}
 
 		logger.warn(`No handler found for "${hostDomain}${pathname}", redirecting to fallback.`);
-		return withCors(Response.redirect(config.fallback, 302), origin, reqHeaders);
+		return withCors(Response.redirect(config.fallback, 302), origin, requestHeaders);
 	};
 
 	const ports = new Set<number>([config.port]);

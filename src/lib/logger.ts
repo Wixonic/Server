@@ -55,9 +55,9 @@ const safeStringify = (obj: unknown): string => {
 
 const formatItem = (item: unknown): string => {
 	if (item instanceof Error) {
-		let str = item.stack || String(item);
-		if (item.cause) str += `\nCaused by: ${formatItem(item.cause)}`;
-		return str;
+		let stack = item.stack || String(item);
+		if (item.cause) stack += `\nCaused by: ${formatItem(item.cause)}`;
+		return stack;
 	}
 
 	if (typeof item === "object" && item !== null) {
@@ -81,6 +81,11 @@ const rawLog = (level: string, color: string, options: LoggerOptions, ...any: un
 
 	if (options.displayLevel) logParts.push(color + level + colors.reset);
 
+	if (options.prefix) {
+		const prefixString = typeof options.prefix === "function" ? options.prefix() : options.prefix;
+		if (prefixString) logParts.push(color + prefixString + colors.reset);
+	}
+
 	if (options.displayDate) {
 		const now = new Date();
 		logParts.push(
@@ -91,9 +96,9 @@ const rawLog = (level: string, color: string, options: LoggerOptions, ...any: un
 		);
 	}
 
-	const argsJoined = any.map(formatItem).join(" ");
+	const joinedArguments = any.map(formatItem).join(" ");
 
-	logParts.push(color + argsJoined + colors.reset);
+	logParts.push(color + joinedArguments + colors.reset);
 	console.log(logParts.join(" "));
 };
 
@@ -104,20 +109,11 @@ export const createLogger = (options: Partial<LoggerOptions> = {}): Logger => {
 		prefix: options.prefix
 	};
 
-	const injectPrefix = (args: unknown[]): unknown[] => {
-		if (mergedOptions.prefix) {
-			const prefixStr = typeof mergedOptions.prefix === "function" ? mergedOptions.prefix() : mergedOptions.prefix;
-			return [prefixStr, ...args];
-		}
-
-		return args;
-	};
-
 	return {
-		debug: (...any) => rawLog("[DEBUG]", colors.debug, mergedOptions, ...injectPrefix(any)),
-		error: (...any) => rawLog("[ERROR]", colors.error, mergedOptions, ...injectPrefix(any)),
-		info: (...any) => rawLog(" [INFO]", colors.info, mergedOptions, ...injectPrefix(any)),
-		warn: (...any) => rawLog(" [WARN]", colors.warn, mergedOptions, ...injectPrefix(any)),
+		debug: (...any) => rawLog("[DEBUG]", colors.debug, mergedOptions, ...any),
+		error: (...any) => rawLog("[ERROR]", colors.error, mergedOptions, ...any),
+		info: (...any) => rawLog(" [INFO]", colors.info, mergedOptions, ...any),
+		warn: (...any) => rawLog(" [WARN]", colors.warn, mergedOptions, ...any),
 		clone: (optionsOrPrefix) => {
 			if (typeof optionsOrPrefix === "string" || typeof optionsOrPrefix === "function") {
 				return createLogger({
