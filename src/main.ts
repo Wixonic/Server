@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import path from "node:path";
 
 import { config } from "./config.ts";
@@ -72,6 +73,18 @@ const loadHandlers = async (baseDirectory: string, subDirectory = "") => {
 	}
 };
 
+const isIpHost = (host: string) => {
+	let hostname = host.replace(/^https?:\/\//, "");
+	if (hostname.startsWith("[")) {
+		const closingBracket = hostname.indexOf("]");
+		if (closingBracket !== -1) hostname = hostname.slice(1, closingBracket);
+	} else if (hostname.includes(":")) {
+		const parts = hostname.split(":");
+		if (parts.length === 2) hostname = parts[0];
+	}
+	return isIP(hostname) !== 0;
+};
+
 const normalizeHost = (host: string) => host.replace(/^127\.0\.0\.1/, "localhost");
 
 const normalizePath = (pathname: string) => pathname.endsWith("/") && pathname.length > 1 ? pathname.slice(0, -1) : pathname;
@@ -111,6 +124,12 @@ const main = async () => {
 		const requestHeaders = request.headers.get("access-control-request-headers");
 		const cleanOrigin = origin.replace(/^https?:\/\//, "");
 		const pathname = url.pathname;
+
+		if (!config.isDevEnvironment && isIpHost(hostDomain)) {
+			logger.debug(`Blocked request with IP host: "${hostDomain}", origin: "${origin}", path: "${pathname}"`);
+			return withCors(new Response("Forbidden", { status: 403 }), origin, requestHeaders);
+		}
+
 		logger.info(`Incoming request for host: "${hostDomain}", origin: "${origin}", path: "${pathname}"`);
 
 		const domainHandlers = handlers.filter((handler) => {
