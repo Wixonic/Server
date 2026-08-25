@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/Wixonic/Server/compare/v1.1.0...v1.2.0) (2026-08-25)
+
+
+### Features
+
+* block raw IP requests (crawlers) ([30108bf](https://github.com/Wixonic/Server/commit/30108bfb0f34ca79b5af7fee09b25197178c2246))
+
 ## [1.1.0](https://github.com/Wixonic/Server/compare/v1.0.3...v1.1.0) (2026-08-23)
 
 
