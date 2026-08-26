@@ -103,7 +103,7 @@ const withCors = (response: Response, origin: string, requestHeaders?: string | 
 const main = async () => {
 	const directory = import.meta.dirname ?? "";
 	try {
-		const wixiBotDirectory = path.resolve(directory, "../../WixiBot");
+		const wixiBotDirectory = path.resolve(directory, "../WixiBot");
 		const wixiBotPath = await Deno.realPath(path.join(wixiBotDirectory, "src/main.ts")).catch(() => path.join(wixiBotDirectory, "src/main.ts"));
 		await import(new URL(`file://${wixiBotPath}`).href);
 
