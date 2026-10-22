@@ -103,8 +103,9 @@ const withCors = (response: Response, origin: string, requestHeaders?: string | 
 const main = async () => {
 	const directory = import.meta.dirname ?? "";
 	try {
-		const wixiBotDirectory = path.resolve(directory, "../WixiBot");
-		const wixiBotPath = await Deno.realPath(path.join(wixiBotDirectory, "src/main.ts")).catch(() => path.join(wixiBotDirectory, "src/main.ts"));
+		const rawWixiBotDirectory = path.resolve(directory, "../WixiBot");
+		const wixiBotDirectory = await Deno.realPath(rawWixiBotDirectory).catch(() => rawWixiBotDirectory);
+		const wixiBotPath = path.join(wixiBotDirectory, "src/main.ts");
 		await import(new URL(`file://${wixiBotPath}`).href);
 
 		const { logger: wixiLogger } = await import(new URL(`file://${path.join(wixiBotDirectory, "src/lib/logger.ts")}`).href);
