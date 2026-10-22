@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/Wixonic/Server/compare/v1.2.0...v1.2.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* Fix path ([c924d62](https://github.com/Wixonic/Server/commit/c924d626b9c3cca07050049c81da68a25599106e))
+
 ## [1.2.0](https://github.com/Wixonic/Server/compare/v1.1.0...v1.2.0) (2026-08-25)
 
 
