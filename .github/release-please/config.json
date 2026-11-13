@@ -1,14 +1,7 @@
 {
 	"packages": {
 		".": {
-			"release-type": "simple",
-			"extra-files": [
-				{
-					"type": "json",
-					"path": "deno.json",
-					"jsonpath": "$.version"
-				}
-			],
+			"release-type": "node",
 			"pull-request-header": "Automatic release",
 			"pull-request-title-pattern": "Server v${version}"
 		}

@@ -1,7 +1,9 @@
 .DS_Store
 
-deno.lock
+node_modules/
 
 storage/
 secrets.js*
 secrets.ts
+
+package-lock.json

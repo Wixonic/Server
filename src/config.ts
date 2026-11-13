@@ -1,4 +1,4 @@
-const isDevEnvironment = Deno.env.get("CLIENT") === "dev";
+const isDevEnvironment = process.env.CLIENT === "dev";
 
 export const config = {
 	isDevEnvironment,

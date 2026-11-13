@@ -1,5 +1,11 @@
+import { readdir, readFile, realpath, stat as getStat } from "node:fs/promises";
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { isIP } from "node:net";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { pathToFileURL } from "node:url";
 
 import { config } from "./config.ts";
 import { logger as defaultLogger, type Logger } from "./lib/logger.ts";
@@ -20,18 +26,18 @@ const handlers: Handler[] = [];
 const loadHandlers = async (baseDirectory: string, subDirectory = "") => {
 	try {
 		const targetDirectory = path.join(baseDirectory, subDirectory);
-		for await (const entry of Deno.readDir(targetDirectory)) {
+		for (const entry of await readdir(targetDirectory, { withFileTypes: true })) {
 			const entryPath = subDirectory ? path.join(subDirectory, entry.name) : entry.name;
 			const fullEntryPath = path.join(baseDirectory, entryPath);
 
-			let isDirectory = entry.isDirectory;
-			let isFile = entry.isFile;
+			let isDirectory = entry.isDirectory();
+			let isFile = entry.isFile();
 
-			if (entry.isSymlink) {
+			if (entry.isSymbolicLink()) {
 				try {
-					const stat = await Deno.stat(fullEntryPath);
-					isDirectory = stat.isDirectory;
-					isFile = stat.isFile;
+					const entryStat = await getStat(fullEntryPath);
+					isDirectory = entryStat.isDirectory();
+					isFile = entryStat.isFile();
 				} catch (error) {
 					logger.warn(`Could not stat symlink target for ${fullEntryPath}:`, error);
 					continue;
@@ -41,8 +47,8 @@ const loadHandlers = async (baseDirectory: string, subDirectory = "") => {
 			if (isDirectory) await loadHandlers(baseDirectory, entryPath);
 			else if (isFile && entry.name.endsWith(".ts")) {
 				try {
-					const resolvedPath = await Deno.realPath(fullEntryPath).catch(() => path.resolve(fullEntryPath));
-					const importedModule = await import(new URL(`file://${resolvedPath}`).href);
+					const resolvedPath = await realpath(fullEntryPath).catch(() => path.resolve(fullEntryPath));
+					const importedModule = await import(pathToFileURL(resolvedPath).href);
 
 					if (importedModule.handler) {
 						const handler = importedModule.handler as Handler;
@@ -67,7 +73,7 @@ const loadHandlers = async (baseDirectory: string, subDirectory = "") => {
 			}
 		}
 	} catch (error) {
-		if (!(error instanceof Deno.errors.NotFound)) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
 			logger.error(`Error reading modules directory ${baseDirectory}:`, error);
 		}
 	}
@@ -178,20 +184,78 @@ const main = async () => {
 		if (match) ports.add(parseInt(match[1], 10));
 	}
 
+	const listener = (request: IncomingMessage, response: ServerResponse) => {
+		let webRequest: Request;
+		try {
+			const headers = new Headers();
+			for (const [name, value] of Object.entries(request.headers)) {
+				if (value === undefined) continue;
+				if (Array.isArray(value)) for (const item of value) headers.append(name, item);
+				else headers.set(name, value);
+			}
+
+			const method = request.method ?? "GET";
+			const init: RequestInit & { duplex?: "half" } = { method, headers };
+
+			if (method !== "GET" && method !== "HEAD") {
+				init.body = Readable.toWeb(request) as unknown as RequestInit["body"];
+				init.duplex = "half";
+			}
+
+			const host = request.headers.host ?? `localhost:${config.port}`;
+			webRequest = new Request(new URL(request.url ?? "/", `${config.secure ? "https" : "http"}://${host}`), init);
+		} catch (error) {
+			logger.error("Failed to build request.", error);
+			response.statusCode = 400;
+			response.end("Bad Request");
+			return;
+		}
+
+		mainHandler(webRequest).then(async (webResponse) => {
+			response.statusCode = webResponse.status;
+			if (webResponse.statusText) response.statusMessage = webResponse.statusText;
+
+			webResponse.headers.forEach((value, name) => {
+				if (name !== "set-cookie") response.setHeader(name, value);
+			});
+
+			const setCookies = webResponse.headers.getSetCookie();
+			if (setCookies.length > 0) response.setHeader("set-cookie", setCookies);
+
+			if (!webResponse.body || webResponse.status === 204 || webResponse.status === 304) response.end();
+			else await pipeline(Readable.fromWeb(webResponse.body as Parameters<typeof Readable.fromWeb>[0]), response);
+		}).catch((error) => {
+			logger.error("Failed to write response.", error);
+			if (response.headersSent) response.destroy();
+			else {
+				response.statusCode = 500;
+				response.end("Internal Server Error");
+			}
+		});
+	};
+
 	if (config.secure) {
 		let cert: string;
 		let key: string;
 		try {
-			cert = await Deno.readTextFile(secrets.ssl.certPath);
-			key = await Deno.readTextFile(secrets.ssl.keyPath);
+			cert = await readFile(secrets.ssl.certPath, "utf8");
+			key = await readFile(secrets.ssl.keyPath, "utf8");
 		} catch (error) {
 			logger.error("Failed to read SSL certificates.", error);
-			Deno.exit(1);
+			process.exit(1);
 		}
 
-		for (const port of ports) Deno.serve({ cert, key, port }, mainHandler);
+		for (const port of ports) {
+			const server = createHttpsServer({ cert, key }, listener);
+			server.on("error", (error) => logger.error(`Server error on port ${port}:`, error));
+			server.listen(port, () => logger.info(`Listening on https://localhost:${port}`));
+		}
 	} else {
-		for (const port of ports) Deno.serve({ port }, mainHandler);
+		for (const port of ports) {
+			const server = createHttpServer(listener);
+			server.on("error", (error) => logger.error(`Server error on port ${port}:`, error));
+			server.listen(port, () => logger.info(`Listening on http://localhost:${port}`));
+		}
 	}
 };
 
