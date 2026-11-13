@@ -86,7 +86,7 @@ const isIpHost = (host: string) => {
 		if (closingBracket !== -1) hostname = hostname.slice(1, closingBracket);
 	} else if (hostname.includes(":")) {
 		const parts = hostname.split(":");
-		if (parts.length === 2) hostname = parts[0];
+		if (parts.length === 2) hostname = parts[0] ?? "";
 	}
 	return isIP(hostname) !== 0;
 };
@@ -181,7 +181,7 @@ const main = async () => {
 	const ports = new Set<number>([config.port]);
 	for (const handler of handlers) {
 		const match = handler.domain.match(/:(\d+)$/);
-		if (match) ports.add(parseInt(match[1], 10));
+		if (match) ports.add(parseInt(match[1] ?? "", 10));
 	}
 
 	const listener = (request: IncomingMessage, response: ServerResponse) => {
