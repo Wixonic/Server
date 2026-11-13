@@ -3,7 +3,7 @@
 	"displayName": "Server",
 	"description": "Modular HTTPS engine for multi-domain hosting",
 	"author": "Wixonic <contact@wixonic.fr> (https://wixonic.fr)",
-	"version": "1.2.1",
+	"version": "1.0.0",
 	"license": "Wixonic Non-Commercial License",
 	"repository": "github:Wixonic/Server",
 	"type": "module",
