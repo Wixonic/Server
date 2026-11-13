@@ -102,19 +102,6 @@ const withCors = (response: Response, origin: string, requestHeaders?: string | 
 
 const main = async () => {
 	const directory = import.meta.dirname ?? "";
-	try {
-		const rawWixiBotDirectory = path.resolve(directory, "../WixiBot");
-		const wixiBotDirectory = await Deno.realPath(rawWixiBotDirectory).catch(() => rawWixiBotDirectory);
-		const wixiBotPath = path.join(wixiBotDirectory, "src/main.ts");
-		await import(new URL(`file://${wixiBotPath}`).href);
-
-		const { logger: wixiLogger } = await import(new URL(`file://${path.join(wixiBotDirectory, "src/lib/logger.ts")}`).href);
-		logger = wixiLogger.clone({ prefix: "[Server]", webhookUsername: "Server" });
-
-		await loadHandlers(path.join(wixiBotDirectory, "src/modules"));
-	} catch (_error) {
-		logger.warn("WixiBot module not found on disk or failed to start. Running Server standalone.");
-	}
 
 	await loadHandlers(path.join(directory, "modules"));
 
