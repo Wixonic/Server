@@ -1,9 +1,0 @@
-{
-	"packages": {
-		".": {
-			"release-type": "node",
-			"pull-request-header": "Automatic release",
-			"pull-request-title-pattern": "Server v${version}"
-		}
-	}
-}
