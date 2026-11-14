@@ -238,8 +238,10 @@ const main = async () => {
 		let cert: string;
 		let key: string;
 		try {
-			cert = await readFile(secrets.ssl.certPath, "utf8");
-			key = await readFile(secrets.ssl.keyPath, "utf8");
+			[cert, key] = await Promise.all([
+				readFile(secrets.ssl.keyPath, "utf8"),
+				readFile(secrets.ssl.certPath, "utf8")
+			]);
 		} catch (error) {
 			logger.error("Failed to read SSL certificates.", error);
 			process.exit(1);
