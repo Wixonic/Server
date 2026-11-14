@@ -73,9 +73,7 @@ const loadHandlers = async (baseDirectory: string, subDirectory = "") => {
 			}
 		}
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-			logger.error(`Error reading modules directory ${baseDirectory}:`, error);
-		}
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") logger.error(`Error reading modules directory ${baseDirectory}:`, error);
 	}
 };
 
@@ -124,7 +122,7 @@ const main = async () => {
 			return withCors(new Response("Forbidden", { status: 403 }), origin, requestHeaders);
 		}
 
-		logger.info(`Incoming request for host: "${hostDomain}", origin: "${origin}", path: "${pathname}"`);
+		logger.debug(`Incoming request for host: "${hostDomain}", origin: "${origin}", path: "${pathname}"`);
 
 		const domainHandlers = handlers.filter((handler) => {
 			const cleanHost = hostDomain.replace(/^https?:\/\//, "");
@@ -159,7 +157,7 @@ const main = async () => {
 		if (request.method === "OPTIONS") {
 			if (handler) return withCors(new Response(null, { status: 204 }), origin, requestHeaders);
 			else {
-				logger.warn(`No handler found for request to "${hostDomain || origin}${pathname}". Method Not Allowed.`);
+				logger.debug(`No handler found for request to "${hostDomain || origin}${pathname}". Method Not Allowed.`);
 				return withCors(new Response("Method Not Allowed", { status: 405 }), origin, requestHeaders);
 			}
 		}
@@ -174,7 +172,7 @@ const main = async () => {
 			}
 		}
 
-		logger.warn(`No handler found for "${hostDomain}${pathname}", redirecting to fallback.`);
+		logger.debug(`No handler found for "${hostDomain}${pathname}", redirecting to fallback.`);
 		return withCors(Response.redirect(config.fallback, 302), origin, requestHeaders);
 	};
 
@@ -249,14 +247,14 @@ const main = async () => {
 
 		for (const port of ports) {
 			const server = createHttpsServer({ cert, key }, listener);
-			server.on("error", (error) => logger.error(`Server error on port ${port}:`, error));
-			server.listen(port, () => logger.info(`Listening on https://localhost:${port}`));
+			server.on("error", (error) => logger.error(`Server error on port :${port} -`, error));
+			server.listen(port, () => logger.info(`Listening on :${port}`));
 		}
 	} else {
 		for (const port of ports) {
 			const server = createHttpServer(listener);
-			server.on("error", (error) => logger.error(`Server error on port ${port}:`, error));
-			server.listen(port, () => logger.info(`Listening on http://localhost:${port}`));
+			server.on("error", (error) => logger.error(`Server error on port :${port} -`, error));
+			server.listen(port, () => logger.info(`Listening on :${port}`));
 		}
 	}
 };
