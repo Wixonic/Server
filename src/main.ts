@@ -192,6 +192,10 @@ const main = async () => {
 				else headers.set(name, value);
 			}
 
+			headers.delete("x-client-ip");
+			const remoteAddress = request.socket.remoteAddress;
+			if (remoteAddress) headers.set("x-client-ip", remoteAddress.replace(/^::ffff:/i, ""));
+
 			const method = request.method ?? "GET";
 			const init: RequestInit & { duplex?: "half" } = { method, headers };
 
